@@ -1,8 +1,15 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Comment, Issue, IssueStatus, NotificationType } from '@prisma/client';
+import {
+  Comment,
+  Issue,
+  IssueStatus,
+  NotificationType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthUser } from '../auth/auth.types';
+import { AuthUser, isHeadOffice } from '../auth/auth.types';
+import { issueVenueScope } from '../common/scope';
 
 @Injectable()
 export class NotificationsService {
@@ -66,9 +73,37 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * Notifications the user may actually see.
+   *
+   * Being the addressee is not sufficient: a notification carries the issue's
+   * title, and someone who has moved venues keeps rows pointing at issues they
+   * can no longer open. This is the one issue read that used to skip
+   * issueVenueScope, so it kept surfacing those titles after the issue itself
+   * had started returning 404.
+   */
+  private visibleTo(user: AuthUser): Prisma.NotificationWhereInput {
+    // Head Office is not bound to a venue, so no issue-level filter applies.
+    // Spelling this out rather than composing an empty scope: Prisma does not
+    // match `{ issue: {} }`, and folding it in silently hid every Head Office
+    // notification.
+    if (isHeadOffice(user)) return { userId: user.id };
+
+    return {
+      userId: user.id,
+      OR: [
+        // Notifications not tied to an issue are always the addressee's own.
+        { issueId: null },
+        { issue: issueVenueScope(user) },
+      ],
+    };
+  }
+
   async listForUser(user: AuthUser, unreadOnly = false) {
     return this.prisma.notification.findMany({
-      where: { userId: user.id, ...(unreadOnly ? { readAt: null } : {}) },
+      where: {
+        AND: [this.visibleTo(user), ...(unreadOnly ? [{ readAt: null }] : [])],
+      },
       orderBy: { createdAt: 'desc' },
       take: 50,
       include: {
@@ -79,7 +114,7 @@ export class NotificationsService {
 
   async unreadCount(user: AuthUser) {
     const count = await this.prisma.notification.count({
-      where: { userId: user.id, readAt: null },
+      where: { AND: [this.visibleTo(user), { readAt: null }] },
     });
     return { count };
   }
