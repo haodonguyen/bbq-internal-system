@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import './globals.css';
 import { api } from '@/lib/api';
 import { getSelectedUserId } from '@/lib/session';
@@ -27,6 +28,10 @@ export default async function RootLayout({
 
   const selectedId = await getSelectedUserId();
   const current = users.find((user) => user.id === selectedId) ?? null;
+
+  // The cookie names someone the API does not know — a removed user, or a reset
+  // database. Clear it rather than letting every page fail its data fetch.
+  if (selectedId && !current && users.length > 0) redirect('/signout');
 
   const notifications = current
     ? await api<Notification[]>('/notifications').catch(() => [])

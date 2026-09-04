@@ -20,7 +20,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next internals and the photo proxy, which returns its own
-  // 401 rather than redirecting an <img> request to an HTML page.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|photo/).*)'],
+  // Everything except Next internals, the photo proxy (which returns its own 401
+  // rather than redirecting an <img> request to an HTML page), and /signout,
+  // which has to stay reachable in order to clear a bad cookie.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|photo/|signout).*)'],
 };
