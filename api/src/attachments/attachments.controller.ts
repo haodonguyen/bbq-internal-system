@@ -49,9 +49,11 @@ export class AttachmentsController {
       'Content-Type': mimeType,
       // Quotes stripped from the display name so it cannot break out of the header.
       'Content-Disposition': `inline; filename="${originalName.replace(/["\\]/g, '')}"`,
-      // These are tenant-scoped: a shared cache must never hand one venue's photo
-      // to another venue's request.
-      'Cache-Control': 'private, max-age=300',
+      // Tenant-scoped, so not cacheable at all. `private` keeps shared caches
+      // out, but the browser cache is keyed on URL alone — after a user switch
+      // it would happily replay another venue's photo from disk without ever
+      // asking the API, and the venue check would never run.
+      'Cache-Control': 'no-store',
     });
 
     return file;

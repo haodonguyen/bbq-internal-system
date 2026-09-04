@@ -34,8 +34,9 @@ export async function GET(
   return new Response(upstream.body, {
     headers: {
       'Content-Type': upstream.headers.get('content-type') ?? 'application/octet-stream',
-      // Per-viewer, never shared: this response depends on who is asking.
-      'Cache-Control': 'private, max-age=300',
+      // Mirrors the API: the response depends on who is asking, so it must not
+      // be reusable after the viewer changes.
+      'Cache-Control': 'no-store',
     },
   });
 }
