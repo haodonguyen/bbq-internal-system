@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import './globals.css';
 import { api } from '@/lib/api';
 import { getSelectedUserId } from '@/lib/session';
@@ -21,12 +22,24 @@ export default async function RootLayout({
 }) {
   // The dev user list is unauthenticated by design — it is the stand-in for a
   // login screen, and is not registered at all in production.
-  const users = await api<UserSummary[]>('/dev/users', { anonymous: true }).catch(
-    () => [] as UserSummary[],
-  );
+  //
+  // "The API is down" and "this user no longer exists" both leave us without a
+  // current user but call for opposite responses, so they are kept apart: a
+  // transient API blip must not sign everyone out.
+  let users: UserSummary[] = [];
+  let userListLoaded = true;
+  try {
+    users = await api<UserSummary[]>('/dev/users', { anonymous: true });
+  } catch {
+    userListLoaded = false;
+  }
 
   const selectedId = await getSelectedUserId();
   const current = users.find((user) => user.id === selectedId) ?? null;
+
+  // The list loaded and the cookie is not in it: a removed user, or a reset
+  // database. Clear it rather than letting every page fail its data fetch.
+  if (userListLoaded && selectedId && !current) redirect('/signout');
 
   const notifications = current
     ? await api<Notification[]>('/notifications').catch(() => [])
