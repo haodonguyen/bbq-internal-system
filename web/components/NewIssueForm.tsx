@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { createIssue, type ActionResult } from '@/app/actions';
 import { PRIORITY_LABEL, ROLE_LABEL, formatBytes } from '@/lib/format';
@@ -23,6 +23,17 @@ export function NewIssueForm({
     isHeadOffice ? (venues[0]?.id ?? '') : (me.venueId ?? ''),
   );
   const [photos, setPhotos] = useState<File[]>([]);
+
+  // Object URLs are minted once per selection and revoked when it changes.
+  // Calling createObjectURL inline in the JSX allocated a fresh URL on every
+  // render and released none of them.
+  const [previews, setPreviews] = useState<{ file: File; url: string }[]>([]);
+
+  useEffect(() => {
+    const next = photos.map((file) => ({ file, url: URL.createObjectURL(file) }));
+    setPreviews(next);
+    return () => next.forEach(({ url }) => URL.revokeObjectURL(url));
+  }, [photos]);
 
   const [state, formAction] = useActionState<ActionResult | null, FormData>(
     async (_previous, formData) => createIssue(formData),
@@ -132,18 +143,17 @@ export function NewIssueForm({
             onChange={(event) => setPhotos(Array.from(event.target.files ?? []).slice(0, 8))}
           />
 
-          {photos.length > 0 && (
+          {previews.length > 0 && (
             <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {photos.map((photo) => (
-                <li key={photo.name} className="overflow-hidden rounded-md border border-slate-200">
+              {previews.map(({ file, url }, index) => (
+                <li
+                  key={`${file.name}-${index}`}
+                  className="overflow-hidden rounded-md border border-slate-200"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={URL.createObjectURL(photo)}
-                    alt=""
-                    className="h-24 w-full object-cover"
-                  />
+                  <img src={url} alt="" className="h-24 w-full object-cover" />
                   <p className="truncate px-2 py-1 text-[11px] text-slate-500">
-                    {photo.name} · {formatBytes(photo.size)}
+                    {file.name} · {formatBytes(file.size)}
                   </p>
                 </li>
               ))}

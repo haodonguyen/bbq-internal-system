@@ -1,8 +1,8 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
-import { uploadPhotos, type ActionResult } from '@/app/actions';
+import { deletePhoto, uploadPhotos, type ActionResult } from '@/app/actions';
 import { attachmentUrl } from '@/lib/urls';
 import { formatBytes } from '@/lib/format';
 import type { Attachment } from '@/lib/types';
@@ -17,6 +17,19 @@ export function PhotoGrid({
   initialError?: string;
 }) {
   const [lightbox, setLightbox] = useState<Attachment | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  function remove(attachment: Attachment) {
+    setRemoveError(null);
+    setRemoving(attachment.id);
+    startTransition(async () => {
+      const result = await deletePhoto(issueId, attachment.id);
+      if ('error' in result) setRemoveError(result.error);
+      setRemoving(null);
+    });
+  }
 
   const [state, formAction] = useActionState<ActionResult | null, FormData>(
     async (_previous, formData) => uploadPhotos(issueId, formData),
@@ -32,11 +45,11 @@ export function PhotoGrid({
       {attachments.length > 0 && (
         <ul className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {attachments.map((attachment) => (
-            <li key={attachment.id}>
+            <li key={attachment.id} className="group relative">
               <button
                 type="button"
                 onClick={() => setLightbox(attachment)}
-                className="group block w-full overflow-hidden rounded-md border border-slate-200
+                className="block w-full overflow-hidden rounded-md border border-slate-200
                            transition hover:border-ember-400"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -50,9 +63,36 @@ export function PhotoGrid({
                   {attachment.originalName} · {formatBytes(attachment.sizeBytes)}
                 </span>
               </button>
+              <button
+                type="button"
+                onClick={() => remove(attachment)}
+                disabled={removing === attachment.id}
+                aria-label={`Remove ${attachment.originalName}`}
+                className="absolute right-1.5 top-1.5 rounded-full bg-white/90 p-1 text-slate-500
+                           opacity-0 shadow-sm transition hover:bg-white hover:text-red-600
+                           focus:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+              >
+                {removing === attachment.id ? (
+                  <span className="block h-4 w-4 text-[10px] leading-4">…</span>
+                ) : (
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+                    <path
+                      fillRule="evenodd"
+                      d="M8.75 1a1 1 0 0 0-.96.71L7.56 2.5H4.25a.75.75 0 0 0 0 1.5h11.5a.75.75 0 0 0 0-1.5h-3.31l-.23-.79A1 1 0 0 0 11.25 1h-2.5ZM5.06 5.5l.66 10.02A2 2 0 0 0 7.71 17.5h4.58a2 2 0 0 0 1.99-1.98l.66-10.02H5.06Z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                )}
+              </button>
             </li>
           ))}
         </ul>
+      )}
+
+      {removeError && (
+        <p role="alert" className="mb-3 text-xs text-red-700">
+          {removeError}
+        </p>
       )}
 
       <form action={formAction} className="flex flex-wrap items-center gap-3">
