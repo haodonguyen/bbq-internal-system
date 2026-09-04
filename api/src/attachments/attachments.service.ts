@@ -20,7 +20,7 @@ import {
   readFileHeader,
   sniffImageMimeType,
 } from './file-signature';
-import { uploadDir } from './upload.config';
+import { MAX_FILES, uploadDir } from './upload.config';
 
 const ATTACHMENT_INCLUDE = {
   uploadedBy: { select: { id: true, name: true, role: true } },
@@ -62,6 +62,14 @@ export class AttachmentsService {
     const moved: string[] = [];
 
     try {
+      // Inside the try so the finally still sweeps up what multer wrote. Multer
+      // is allowed one file past the cap precisely so this can be reported.
+      if (files.length > MAX_FILES) {
+        throw new BadRequestException(
+          `You can attach at most ${MAX_FILES} photos at a time.`,
+        );
+      }
+
       // Phase 1 — check every file before any of them counts as an attachment.
       const rows: PendingAttachment[] = [];
       for (const file of files) {
