@@ -84,19 +84,6 @@ export async function updateIssue(
   return { ok: true };
 }
 
-export async function updateIssueField(issueId: string, formData: FormData) {
-  const field = String(formData.get('field'));
-  const raw = formData.get('value');
-  const value = raw === null || raw === '' ? null : String(raw);
-
-  const patch: Record<string, unknown> =
-    field === 'dueDate'
-      ? { dueDate: value ? new Date(value).toISOString() : null }
-      : { [field]: value };
-
-  return updateIssue(issueId, patch);
-}
-
 export async function addComment(
   issueId: string,
   formData: FormData,
@@ -132,7 +119,10 @@ export async function uploadPhotos(
   return { ok: true };
 }
 
-export async function deletePhoto(issueId: string, attachmentId: string) {
+export async function deletePhoto(
+  issueId: string,
+  attachmentId: string,
+): Promise<ActionResult> {
   try {
     await api(`/issues/${issueId}/attachments/${attachmentId}`, { method: 'DELETE' });
   } catch (error) {
