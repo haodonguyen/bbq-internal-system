@@ -68,7 +68,9 @@ export class DashboardService {
       overdue,
       assignedToMe,
       unassigned,
-      byVenue: isHeadOffice(user) ? await this.perVenue(now) : null,
+      byVenue: isHeadOffice(user)
+        ? await this.perVenue(now, requestedVenueId)
+        : null,
       recentOverdue: await this.prisma.issue.findMany({
         where: overdueWhere,
         orderBy: { dueDate: 'asc' },
@@ -84,21 +86,32 @@ export class DashboardService {
   /**
    * Head Office only. Two grouped queries rather than a pair per venue, so the
    * cost does not grow with the estate.
+   *
+   * Honours the same venue filter as the rest of the summary. Without it a
+   * request narrowed to one venue returned cards for that venue beside a table
+   * covering all of them, and the table did not add up to the cards.
    */
-  private async perVenue(now: Date) {
+  private async perVenue(now: Date, venueId?: string) {
+    const venueFilter = venueId ? { venueId } : {};
+
     const [venues, openGroups, overdueGroups] = await Promise.all([
       this.prisma.venue.findMany({
+        where: venueId ? { id: venueId } : {},
         orderBy: { name: 'asc' },
         select: { id: true, name: true, code: true },
       }),
       this.prisma.issue.groupBy({
         by: ['venueId'],
-        where: { status: { not: IssueStatus.CLOSED } },
+        where: { ...venueFilter, status: { not: IssueStatus.CLOSED } },
         _count: { _all: true },
       }),
       this.prisma.issue.groupBy({
         by: ['venueId'],
-        where: { dueDate: { lt: now }, status: { not: IssueStatus.CLOSED } },
+        where: {
+          ...venueFilter,
+          dueDate: { lt: now },
+          status: { not: IssueStatus.CLOSED },
+        },
         _count: { _all: true },
       }),
     ]);
