@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+*.tsbuildinfo
+
+# Local environment
+.env
+.env.local
+
+# Uploaded issue photos (these live on a Docker volume, never in the repo)
+uploads/
+
+# Logs and OS cruft
+*.log
+.DS_Store

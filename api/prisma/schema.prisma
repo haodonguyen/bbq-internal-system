@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  HEAD_OFFICE
+  VENUE_MANAGER
+  VENUE_STAFF
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum NotificationType {
+  ISSUE_ASSIGNED
+  ISSUE_COMMENTED
+  ISSUE_STATUS_CHANGED
+  ISSUE_OVERDUE
+}
+
+model Venue {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  users  User[]
+  issues Issue[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  role      Role
+  // Null for HEAD_OFFICE, required for venue roles. Enforced in application code
+  // (Prisma cannot express a conditional NOT NULL) and by the seed.
+  venueId   String?
+  venue     Venue?   @relation(fields: [venueId], references: [id])
+  createdAt DateTime @default(now())
+
+  reportedIssues Issue[]        @relation("IssueReporter")
+  assignedIssues Issue[]        @relation("IssueAssignee")
+  comments       Comment[]
+  attachments    Attachment[]
+  notifications  Notification[]
+
+  @@index([venueId])
+}
+
+model Issue {
+  id String @id @default(uuid())
+
+  // Denormalised onto the issue rather than derived through the reporter: venue
+  // scoping is then a single indexed predicate, and it survives a user moving venues.
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id])
+
+  title       String
+  description String      @db.Text
+  priority    Priority    @default(MEDIUM)
+  status      IssueStatus @default(OPEN)
+
+  reporterId String
+  reporter   User   @relation("IssueReporter", fields: [reporterId], references: [id])
+
+  assigneeId String?
+  assignee   User?   @relation("IssueAssignee", fields: [assigneeId], references: [id])
+
+  dueDate   DateTime?
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  comments      Comment[]
+  attachments   Attachment[]
+  notifications Notification[]
+
+  @@index([venueId, status])
+  @@index([assigneeId])
+  @@index([dueDate])
+  @@index([createdAt])
+}
+
+model Attachment {
+  id      String @id @default(uuid())
+  issueId String
+  issue   Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  // Random on-disk name; originalName is display-only and never used to build a path.
+  storedName   String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([issueId])
+}
+
+model Comment {
+  id      String @id @default(uuid())
+  issueId String
+  issue   Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  message String
+
+  issueId String?
+  issue   Issue?  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
