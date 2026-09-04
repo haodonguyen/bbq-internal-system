@@ -1,3 +1,5 @@
+import { open } from 'node:fs/promises';
+
 /**
  * Verifies an uploaded file really is one of the image formats we accept, by
  * looking at its leading bytes rather than trusting the client-supplied
@@ -56,4 +58,21 @@ const EXTENSIONS: Record<AllowedMimeType, string> = {
 /** Extension is derived from the sniffed type, never from the uploaded filename. */
 export function extensionFor(mimeType: AllowedMimeType): string {
   return EXTENSIONS[mimeType];
+}
+
+/**
+ * Reads just the leading bytes of a file.
+ *
+ * The whole point is not to pull a 10 MB photo into memory to look at 32 bytes —
+ * eight of those in one request was 80 MB of Buffers for no reason.
+ */
+export async function readFileHeader(path: string, length = 32): Promise<Buffer> {
+  const handle = await open(path, 'r');
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
 }
