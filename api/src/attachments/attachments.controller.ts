@@ -21,7 +21,9 @@ export class AttachmentsController {
   constructor(private readonly attachments: AttachmentsService) {}
 
   @Post()
-  @UseInterceptors(FilesInterceptor('files', MAX_FILES, uploadOptions))
+  // MAX_FILES + 1 mirrors the multer limit: the extra slot exists so the service
+  // can report the overflow rather than the connection simply dropping.
+  @UseInterceptors(FilesInterceptor('files', MAX_FILES + 1, uploadOptions))
   upload(
     @CurrentUser() user: AuthUser,
     @Param('issueId', ParseUUIDPipe) issueId: string,

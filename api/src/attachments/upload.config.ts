@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { existsSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { diskStorage } from 'multer';
@@ -34,14 +35,26 @@ export const uploadOptions: MulterOptions = {
   }),
   limits: {
     fileSize: maxFileBytes(),
-    files: MAX_FILES,
+    // One past the cap on purpose. Multer aborts the request stream the moment a
+    // limit is hit, which the client sees as a dropped connection rather than an
+    // error it can read. Accepting one extra lets AttachmentsService reject the
+    // common "one too many" case with a message that names the limit; the
+    // allowance stays tight so a huge batch is still refused at the transport
+    // layer instead of being written to disk.
+    files: MAX_FILES + 1,
   },
   fileFilter: (_req, file, cb) => {
     // A cheap first pass so obvious non-images are rejected before hitting disk.
     // The authoritative check is the byte sniff in AttachmentsService.
+    //
+    // This has to be an HttpException, not a plain Error: multer hands whatever
+    // it gets straight to Nest's exception layer, and a bare Error becomes a 500
+    // with no usable message.
     if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.mimetype)) {
       return cb(
-        new Error(`Unsupported file type: ${file.mimetype}`) as any,
+        new BadRequestException(
+          `"${file.originalname}" is a ${file.mimetype} file. Photos must be JPEG, PNG, WebP or HEIC.`,
+        ),
         false,
       );
     }
