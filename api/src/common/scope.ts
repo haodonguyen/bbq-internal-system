@@ -32,7 +32,13 @@ export function issueVenueScope(
 /** Venues the user may see at all. */
 export function venueListScope(user: AuthUser): Prisma.VenueWhereInput {
   if (isHeadOffice(user)) return {};
-  return { id: user.venueId ?? '__none__' };
+  // Same invariant as issueVenueScope, so it fails the same way. Previously this
+  // filtered on a sentinel id that matched nothing — correct by accident, but it
+  // hid a broken user record instead of reporting it.
+  if (!user.venueId) {
+    throw new ForbiddenException('User is not assigned to a venue');
+  }
+  return { id: user.venueId };
 }
 
 /**
