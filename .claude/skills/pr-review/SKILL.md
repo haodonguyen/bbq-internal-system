@@ -21,24 +21,47 @@ interacts with code it did not change.
 ## Pipeline
 
 ```bash
-S=.claude/skills/pr-review/scripts
+# Absolute path, so the scripts still resolve from inside the worktree below.
+S="$(git rev-parse --show-toplevel)/.claude/skills/pr-review/scripts"
 
-# 0. if reviewing someone else's PR, check it out first
-gh pr checkout 42
-gh pr view --json number,title,body,baseRefName
+# 0. check the PR out in its own worktree, and read its intent
+PR=42
+git fetch -q origin "pull/$PR/head"
+WT="$(mktemp -d)/pr-$PR" && git worktree add -q --detach "$WT" FETCH_HEAD
+gh pr view "$PR" --json number,title,body,baseRefName
+git fetch -q origin <base>                 # baseRefName from the line above
 
-# 1. collect against the PR's own base (baseRefName above), not always main
-#    writes tmp/diff-<base>/chunk-01.diff, chunk-02.diff, ...
-python3 $S/git-diff.py <base>
+# Run steps 1-4 with the worktree as the working directory.
+
+# 1. collect against the PR's own base, freshly fetched. It prints the chunk
+#    directory it wrote — use that path as --diff below. Every "/" in the
+#    branch name becomes "-", so origin/fix/foo writes tmp/diff-origin-fix-foo.
+python3 $S/git-diff.py origin/<base>
 
 # 2. read each chunk in order, open the files it touches, write tmp/findings.json
+#    (set "pr" in it: a detached worktree has no branch for gh to infer the PR from)
 
 # 3. validate the anchors (dry run — sends nothing)
-python3 $S/post-review.py tmp/findings.json --diff tmp/diff-<base>
+python3 $S/post-review.py tmp/findings.json --diff <printed directory>
 
 # 4. only after the user confirms, submit — or --draft for a pending review
-python3 $S/post-review.py tmp/findings.json --diff tmp/diff-<base> --post
+python3 $S/post-review.py tmp/findings.json --diff <printed directory> --post
+
+# 5. clean up
+git worktree remove --force "$WT"
 ```
+
+**Why a worktree and not `gh pr checkout`:** checking a PR out in place swaps
+the user's working tree out from under them, and if the PR branch predates
+this skill, the switch deletes `scripts/` mid-review. A detached worktree
+leaves their checkout alone and needs no local branch. It is also where to run
+the PR's own build when a finding needs testing at runtime rather than by
+reading — use a separate compose project and ports
+(`docker compose -p pr$PR-review` with `API_PORT` / `POSTGRES_PORT` overridden)
+so nothing the user is running is disturbed, and `down -v` it afterwards.
+
+Diffing against `origin/<base>` right after fetching it keeps the merge base
+identical to GitHub's; a stale local base branch would shift it.
 
 **Stacked pull requests:** when PRs are stacked, a PR's base is the branch
 below it, not `main`. Diffing against `main` pulls in every PR beneath it, and
