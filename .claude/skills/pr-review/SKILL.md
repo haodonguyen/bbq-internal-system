@@ -234,13 +234,39 @@ want to see the comments in place before anything is public.
 
 ## Re-reviewing After a Push
 
-Diff only what is new since your last pass, so you do not repeat yourself:
+Read only what is new since your last pass, so you do not repeat yourself, but
+check anchors against the **whole** PR: that is the diff GitHub resolves them
+against.
 
 ```bash
-python3 $S/git-diff.py <sha-you-last-reviewed> --no-merge-base --out tmp/since
+python3 $S/git-diff.py <sha-you-last-reviewed> --no-merge-base --out tmp/since  # read these
+python3 $S/git-diff.py origin/<base>                                              # anchor against this
+python3 $S/post-review.py tmp/findings.json --diff <directory the second command printed>
 ```
 
-Note in the summary which earlier findings the new commits addressed.
+The line numbers in both are new-file lines at the same HEAD, so a line read
+from the first set is written into findings as-is. If the re-review chunks are
+passed as `--diff` by mistake, `post-review.py` recognises them and says so.
+
+Note in the summary which earlier findings the new commits addressed. If your
+previous review is still a pending draft, it has to be submitted or deleted
+first — GitHub allows one pending review per person per PR, and the dry run
+reports it.
+
+## Changing the Scripts
+
+`scripts/test_scripts.py` covers both scripts: line numbering (including the
+`+++` / `---` lines inside a hunk that once shifted every number after them),
+the ignore file, anchor checks, and one test that runs `git-diff.py` on a real
+repository and checks every labelled number against the new file. Run it after
+any change:
+
+```bash
+python3 -m unittest discover -s .claude/skills/pr-review/scripts -p 'test_*.py'
+```
+
+The checks that call GitHub (PR head, base, pending review) are not covered;
+test those with a dry run against a real PR.
 
 ## Anti-Patterns
 

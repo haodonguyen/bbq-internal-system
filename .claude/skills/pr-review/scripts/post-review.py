@@ -27,7 +27,11 @@ Before sending, the script also checks that:
   - the chunks were diffed from the commit the pull request's head points at
     (a local commit that was not pushed would shift the line numbers), and
   - the chunks were diffed against the pull request's own base. For a stacked
-    pull request that base is the branch below it, not main.
+    pull request that base is the branch below it, not main. Chunks from a
+    commit inside the PR (a re-review diff) are recognised and reported;
+    anchors must be checked against the whole PR's chunks.
+  - you do not already have a pending review on the PR. GitHub allows one per
+    person, and would reject a second only once it was sent.
 
 findings.json:
   {
@@ -106,10 +110,8 @@ def load_anchors(diff_dir):
                 if not in_hunk and line.startswith("+++ "):
                     target = line[4:]
                     path = None if target == "/dev/null" else unquote_git_path(target)
-                    if path and path.startswith("b/"):
+                    if path and path.startswith("b/"):  # quoted paths are unquoted above
                         path = path[2:]
-                    elif path and path.startswith('"b/'):
-                        path = path[3:]
                     continue
                 if HUNK_RE.match(line):
                     in_hunk = True
@@ -217,6 +219,11 @@ def pr_context(findings):
     return repo, pr, viewer
 
 
+def is_ancestor(older, newer):
+    code, _, _ = run("git", "merge-base", "--is-ancestor", older, newer)
+    return code == 0
+
+
 def local_merge_base(base_oid):
     code, out, _ = run("git", "merge-base", base_oid, "HEAD")
     return out if code == 0 else None
@@ -247,11 +254,38 @@ def preflight(findings, bases, event, sending):
         warnings.append("base commit %s is not available locally (git fetch), so the chunks' "
                         "base could not be checked" % pr["baseRefOid"][:8])
     elif bases and expected not in bases:
+        inside_pr = all(is_ancestor(expected, b) for b in bases)
+        if inside_pr:
+            # Chunks from a commit partway through the PR: a re-review diff.
+            # Fine to read from, but GitHub resolves anchors against the
+            # whole PR, so they must be checked against the whole PR too.
+            problems.append(
+                "these chunks start at %s, a commit inside PR #%d, so they look like a "
+                "re-review diff. Read from them, but check anchors against the whole PR: "
+                "run git-diff.py origin/%s and pass that directory as --diff."
+                % (", ".join(b[:8] for b in bases), pr["number"], pr["baseRefName"]))
+        else:
+            problems.append(
+                "the chunks were diffed against %s, but PR #%d's diff starts at %s. Its "
+                "base branch is `%s`; re-run: git-diff.py origin/%s"
+                % (", ".join(b[:8] for b in bases), pr["number"], expected[:8],
+                   pr["baseRefName"], pr["baseRefName"]))
+
+    # GitHub allows one pending review per person per pull request, and
+    # rejects a second one only when it is sent. Catch it in the dry run.
+    try:
+        # One page of 100; --paginate would print one JSON array per page.
+        reviews = gh_json("api", "repos/%s/pulls/%d/reviews?per_page=100"
+                          % (repo, pr["number"]))
+        pending = [r for r in reviews
+                   if r.get("state") == "PENDING" and r["user"]["login"] == viewer]
+    except Exception:
+        pending = []
+    if pending:
         problems.append(
-            "the chunks were diffed against %s, but PR #%d's diff starts at %s. Its base "
-            "branch is `%s`; re-run: git-diff.py %s"
-            % (", ".join(b[:8] for b in bases), pr["number"], expected[:8],
-               pr["baseRefName"], pr["baseRefName"]))
+            "you already have a pending review on PR #%d (%s). GitHub allows one at a "
+            "time, so this would be rejected. Submit or delete that one first."
+            % (pr["number"], pending[0].get("html_url") or pending[0]["id"]))
 
     if pr["author"]["login"] == viewer and event != "COMMENT":
         problems.append("you are the author of PR #%d, and GitHub does not allow %s on "
