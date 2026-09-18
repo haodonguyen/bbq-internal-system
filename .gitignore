@@ -16,3 +16,7 @@ uploads/
 # Logs and OS cruft
 *.log
 .DS_Store
+__pycache__/
+
+# pr-review skill working files (diff chunks, findings.json)
+tmp/

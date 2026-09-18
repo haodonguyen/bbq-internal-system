@@ -1,0 +1,7 @@
+# Paths the pr-review skill's git-diff.py leaves out of review chunks.
+# gitignore syntax. Generated or machine-written files only; anything a
+# person wrote belongs in the review.
+
+package-lock.json
+*.tsbuildinfo
+web/next-env.d.ts
